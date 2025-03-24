@@ -1214,23 +1214,12 @@ def check_node_collision():
     # Safety check - make sure node is in a valid position for this level
     min_node_x = WORLD_WIDTH * 0.75  # Node should be in the right quarter of the world
     if node_x < min_node_x:
-        print(f"WARNING: Node position ({node_x}) is less than minimum required ({min_node_x})")
-        print(f"This might cause premature level completion")
-        # Don't return false collision here, just warn
+        # This might cause premature level completion, but this is a silent check now
+        pass
     
     # Check if rectangles overlap
     collision = player_rect.colliderect(node_rect)
     
-    # Debug info - only print when collision is detected to avoid spam
-    if collision:
-        print(f"Node collision detected!")
-        print(f"Player position: {player_x}, {player_y}")
-        print(f"Node position: {node_x}, {node_y}")
-        print(f"Player rect: {player_rect}")
-        print(f"Node rect: {node_rect}")
-        print(f"Current level: {current_level}")
-        print(f"World dimensions: {WORLD_WIDTH}x{WORLD_HEIGHT}")
-        
     # If collision, trigger screen shake for feedback
     if collision:
         trigger_screen_shake(0.3, 8)
@@ -2187,8 +2176,6 @@ def reset_level(level):
     global node_x, node_y, scanner_active, scanner_radius, scanner_speed, scanner_flicker_intensity
     global SCANNER_COLOR, FIREWALL_COLOR, firewall_flicker_intensity
     
-    print(f"Resetting to level {level}")
-    
     # Reset game state
     current_level = level
     player_dead = False
@@ -2201,8 +2188,6 @@ def reset_level(level):
     scaling_factor = 1.0 + (level - 1) * 0.3  # Same formula used in win message
     WORLD_WIDTH = int(BASE_WORLD_WIDTH * scaling_factor)
     WORLD_HEIGHT = int(BASE_WORLD_HEIGHT * scaling_factor)
-    
-    print(f"World dimensions for level {level}: {WORLD_WIDTH}x{WORLD_HEIGHT}")
     
     # Reset player
     player_x = 200
@@ -2239,8 +2224,6 @@ def reset_level(level):
         node_x = WORLD_WIDTH - 250  # Even further right in level 3
         
     node_y = WORLD_HEIGHT // 2
-    
-    print(f"Security node position: {node_x}, {node_y}")
     
     # Level-specific firewall settings
     if level == 1:

@@ -9,12 +9,22 @@ A cyberpunk-themed hacker infiltration game built with Pygame where you navigate
 - **Maze Navigation**: Navigate through a maze with strategically placed walls
 - **Wall Disabling System**: Temporarily disable walls by spending collected data shards
 - **Adaptive AI**: Security system that evolves and responds to player actions
-- **Visual Feedback System**: Color-coded player states indicate ability readiness
+- **Visual Feedback System**: Color-coded player states indicate ability readiness with particle effects
 - **Interactive Tutorials**: Guided instructions for game mechanics with pause functionality
-- **Progression System**: Multiple levels with increasing difficulty
+- **Progression System**: Multiple levels with increasing difficulty and expanding world size
 - **Resource Management**: Strategic collection and use of data shards
 - **Immersive Effects**: Screen shake, particle systems, and glitch effects
 - **Polished UI**: Cyberpunk-styled interface with intuitive visual cues
+- **Firewall Attraction**: Advanced firewall behavior that responds to decoy placement in both vertical and horizontal directions
+
+## Recent Updates
+
+- **Enhanced Decoy Indicator**: Decoy readiness now displays particle effects even when the player is stationary
+- **Security Node Redesign**: Changed from pulsing red circle to a more thematic red microchip design
+- **Improved Level Progression**: Fixed level scaling with proper world size expansion between levels
+- **Enhanced Firewall AI**: Improved the firewall's attraction to decoys with better vertical and horizontal tracking
+- **Player Collision Refinement**: Better collision detection to prevent snagging on walls
+- **Visual Feedback Enhancements**: More responsive particle effects to indicate ability states
 
 ## Controls
 
@@ -28,12 +38,12 @@ A cyberpunk-themed hacker infiltration game built with Pygame where you navigate
 ## Game Elements
 
 - **Player Avatar**: Blue angular shape with dynamic glowing effects
-- **Security Node**: Pulsing red circle (your objective)
+- **Security Node**: Red microchip (your objective) with pulsing effect
 - **Firewall**: Orange vertical line that pursues the player or decoy
 - **Data Shards**: Cyan triangular collectibles that enable upgrades
 - **Scanner**: Yellow tracking device that appears after multiple decoy uses
 - **Decoy System**: Blue hologram that attracts security systems
-  - **Visual Indicator**: Player color brightness indicates decoy readiness
+  - **Visual Indicator**: Player color brightness and particle effects indicate decoy readiness
 - **Maze Walls**: Purple obstacles that can be temporarily disabled by spending data shards
 
 ## Tutorial System
@@ -46,9 +56,30 @@ The game features two tutorial popups that help new players:
 ## Level Progression
 
 - **Level 1**: Introduction to core mechanics with moderate difficulty
-- **Level 2**: Increased challenge with faster firewalls
-- **Level 3**: Maximum difficulty with even faster threats
-- Additional levels can be added by modifying the game code
+- **Level 2**: Increased challenge with faster firewalls, expanded world, and tracker introduction
+- **Level 3**: Maximum difficulty with even faster threats and more aggressive AI
+- Each level increases world size and security system complexity
+
+## Game Mechanics Detail
+
+### Decoy System
+The decoy system allows players to create a distraction that attracts the firewall. The decoy:
+- Is indicated by blue particle effects around the player (now visible even when standing still)
+- Has a cooldown period after use
+- Becomes increasingly vital in higher levels as security systems become more aggressive
+
+### Firewall Behavior
+The firewall pursues the player or decoy with:
+- Horizontal movement that accelerates based on distance
+- Vertical tracking that adapts to the decoy's position
+- Level-based attraction multiplier that increases with difficulty
+- Natural-looking movement patterns with slight randomization
+
+### World Scaling
+As players progress through levels:
+- The world expands in size, making navigation more challenging
+- Security node positions adjust to maintain fair gameplay
+- Maze walls become more complex and strategically placed
 
 ## Sound Setup
 
@@ -63,6 +94,8 @@ If these files are missing, the game will run without sound. To add sounds:
 1. Download free cyberpunk/sci-fi sound effects (.wav format)
 2. Name them as listed above and place them in the `sounds` folder
 3. Recommended sources: Freesound.org, OpenGameArt.org
+
+The repository includes `create_collect_sound.py`, a utility script that can generate a custom collect sound using numpy and scipy.
 
 ## Custom Fonts
 
@@ -80,6 +113,12 @@ The game uses a variety of cyberpunk-styled fonts located in the `assets/fonts` 
 
 ```
 pip install pygame
+```
+
+3. Optional: Install numpy and scipy to use the sound creation utility:
+
+```
+pip install numpy scipy
 ```
 
 ## How to Run
@@ -100,3 +139,14 @@ This game demonstrates several game development concepts:
 - **Tutorial Integration**: Non-intrusive learning mechanics
 - **Resource Management**: Strategic use of data shards to disable obstacles
 - **Immersive Design**: Consistent aesthetic with atmospheric effects 
+- **Level Scaling**: Progressive difficulty through world expansion and AI enhancement
+
+## Contributing
+
+Feel free to fork this repository and submit pull requests for enhancements or bug fixes. Some potential areas for contribution:
+
+- Additional levels with unique challenges
+- New enemy types with different behaviors
+- Power-up systems beyond the current mechanics
+- Visual and audio enhancements
+- Performance optimizations 
