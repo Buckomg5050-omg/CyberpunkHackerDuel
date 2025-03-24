@@ -10,8 +10,10 @@ pygame.mixer.init()  # Initialize sound mixer
 
 # Screen dimensions (viewport)
 VIEWPORT_WIDTH, VIEWPORT_HEIGHT = 800, 600
-# World dimensions (entire game world)
-WORLD_WIDTH, WORLD_HEIGHT = 1600, 1200
+# Base world dimensions (entire game world) - will be scaled based on level
+BASE_WORLD_WIDTH, BASE_WORLD_HEIGHT = 1600, 1200
+# Initialize world dimensions with base values
+WORLD_WIDTH, WORLD_HEIGHT = BASE_WORLD_WIDTH, BASE_WORLD_HEIGHT
 
 screen = pygame.display.set_mode((VIEWPORT_WIDTH, VIEWPORT_HEIGHT))
 pygame.display.set_caption("Cyberpunk Hacker Duel")
@@ -56,7 +58,8 @@ asset_fonts = {
     'origin_tech': 'OriginTech personal use.ttf',
     'interfearence': 'Interfearence.ttf',
     'metro_grunge': 'Metro Grunge.ttf',
-    'doctor_satan': 'Doctor Satan.ttf'
+    'doctor_satan': 'Doctor Satan.ttf',
+    'pixel_game': 'Pixel Game.otf'
 }
 
 # Load fonts from assets directory first, fallback to system fonts
@@ -65,7 +68,7 @@ try:
     font = load_font(asset_fonts['origin_tech'], 36)  # Main game font
     alert_font = load_font(asset_fonts['doctor_satan'], 42)  # Alert messages
     small_font = load_font(asset_fonts['tr2n'], 16)  # Small text
-    score_font = load_font(asset_fonts['interfearence'], 24)  # Score display
+    score_font = load_font(asset_fonts['pixel_game'], 24)  # Score display with Pixel Game font
     title_font = load_font(asset_fonts['doctor_glitch'], 48)  # Title
     subtitle_font = load_font(asset_fonts['tr2n'], 22)  # Subtitle
     section_font = load_font(asset_fonts['metro_grunge'], 24)  # Section headers
@@ -114,19 +117,70 @@ shake_timer = 0
 max_shake_offset = 5
 
 # Sound settings and loading
-sounds_folder = os.path.join(os.path.dirname(__file__), 'assets', 'sounds')
+sounds_folder = os.path.join(os.path.dirname(__file__), 'sounds')
+print(f"Looking for sound files in: {sounds_folder}")
+
+# Create a DummySound class for when sound files can't be loaded
+class DummySound:
+    def play(self, *args, **kwargs): pass
+    def set_volume(self, *args, **kwargs): pass
+
+# Initialize with dummy sounds by default
+ambient_sound = DummySound()
+impact_sound = DummySound()
+collect_sound = DummySound()
+sound_enabled = False
+
 try:
-    ambient_sound = pygame.mixer.Sound(os.path.join(sounds_folder, 'ambient_hum.wav'))
-    impact_sound = pygame.mixer.Sound(os.path.join(sounds_folder, 'impact.wav'))
-    collect_sound = pygame.mixer.Sound(os.path.join(sounds_folder, 'collect.wav'))
-    # Set volumes
-    ambient_sound.set_volume(0.3)
-    impact_sound.set_volume(0.5)
-    collect_sound.set_volume(0.4)
-    sound_enabled = True
-except:
-    print("Warning: Sound files not found or error loading sounds. Running without audio.")
-    sound_enabled = False
+    # Initialize sound mixer
+    if not pygame.mixer.get_init():
+        pygame.mixer.init()
+    
+    # Try to load each sound file separately
+    sound_loaded_count = 0
+    
+    # Load ambient sound
+    try:
+        ambient_path = os.path.join(sounds_folder, 'ambient_hum.wav')
+        if os.path.exists(ambient_path) and os.path.getsize(ambient_path) > 100:  # Ensure it's not empty
+            ambient_sound = pygame.mixer.Sound(ambient_path)
+            ambient_sound.set_volume(0.3)
+            print("Loaded ambient sound")
+            sound_loaded_count += 1
+    except Exception as e:
+        print(f"Failed to load ambient sound: {e}")
+    
+    # Load impact sound
+    try:
+        impact_path = os.path.join(sounds_folder, 'impact.wav')
+        if os.path.exists(impact_path) and os.path.getsize(impact_path) > 100:
+            impact_sound = pygame.mixer.Sound(impact_path)
+            impact_sound.set_volume(0.5)
+            print("Loaded impact sound")
+            sound_loaded_count += 1
+    except Exception as e:
+        print(f"Failed to load impact sound: {e}")
+    
+    # Load collect sound
+    try:
+        collect_path = os.path.join(sounds_folder, 'collect.wav')
+        if os.path.exists(collect_path) and os.path.getsize(collect_path) > 100:
+            collect_sound = pygame.mixer.Sound(collect_path)
+            collect_sound.set_volume(0.4)
+            print("Loaded collect sound")
+            sound_loaded_count += 1
+    except Exception as e:
+        print(f"Failed to load collect sound: {e}")
+    
+    # Enable sound if we managed to load at least one sound
+    if sound_loaded_count > 0:
+        sound_enabled = True
+        print(f"Successfully loaded {sound_loaded_count}/3 sound files")
+    else:
+        print("No sound files could be loaded, running in silent mode")
+except Exception as e:
+    print(f"Error initializing sound system: {e}")
+    print("Warning: Sound system initialization failed. Running without audio.")
 
 # Ambient particles
 particles = []
@@ -141,10 +195,18 @@ player_y = WORLD_HEIGHT - 200  # Starting position
 player_speed = 5
 player_start_x = WORLD_WIDTH // 4 - player_size // 2
 player_start_y = WORLD_HEIGHT - 200
+player_dead = False
+
+# Define decoy particles list for trailing effect when decoy is ready
+decoy_ready_particles = []
+
+# Variables to track previous player position for trail effects
+prev_player_x = 0
+prev_player_y = 0
 
 # Security node settings
-node_x = 1400
-node_y = 100
+node_x = WORLD_WIDTH - 150  # Position it on the right side of the world
+node_y = WORLD_HEIGHT // 2   # Center it vertically
 node_radius = 20
 node_pulse_time = 0
 node_pulse_interval = 0.5  # seconds
@@ -482,7 +544,11 @@ def draw_walls():
                 section = wall_surf.subsurface((0, glitch_y, wall.width, glitch_height)).copy()
                 wall_surf.blit(section, (glitch_offset, glitch_y))
         
+        # Draw the wall at the exact screen coordinates
         screen.blit(wall_surf, (screen_x, screen_y))
+        
+        # For debugging - uncomment to visualize wall collision boxes
+        # pygame.draw.rect(screen, (255, 0, 0), pygame.Rect(screen_x, screen_y, wall.width, wall.height), 1)
 
 def draw_transition_effect():
     # Create static effect for transition
@@ -514,7 +580,13 @@ def check_wall_collision(new_x, new_y):
     # This respects the walls_visible flag that is controlled by disable_walls()
     if walls_visible and len(walls) > 0:
         # Create a player rectangle at the new position to check for collisions
-        player_rect = pygame.Rect(new_x - player_size/2, new_y - player_size/2, player_size, player_size)
+        # Player position is the center, rect needs top-left
+        player_rect = pygame.Rect(
+            new_x - player_size/2,  # Convert center coordinates to top-left
+            new_y - player_size/2,  # Convert center coordinates to top-left
+            player_size,
+            player_size
+        )
         
         # Check collision with any wall
         for wall in walls:
@@ -591,8 +663,11 @@ def draw_player():
         offset_x = random.randint(-shake_intensity, shake_intensity)
         offset_y = random.randint(-shake_intensity, shake_intensity)
     
-    # Convert world to screen coordinates
-    screen_x, screen_y = world_to_screen(player_x, player_y)
+    # Convert world to screen coordinates (player_x and player_y represent the player's center)
+    screen_x, screen_y = world_to_screen(player_x - player_size/2, player_y - player_size/2)  # Convert center to top-left for drawing
+    
+    # Calculate visual size (5% larger than collision size)
+    visual_size = int(player_size * 1.05)
     
     # Adjust player color based on decoy availability
     decoy_ready_percent = 1.0
@@ -610,18 +685,18 @@ def draw_player():
     is_fully_charged = decoy_can_use
     glow_layers = 4 if is_fully_charged else 3
     
-    # Create glow effect layers
-    glow_size = player_size + 12
+    # Create glow effect layers - adjust for visual size
+    glow_size = visual_size + 12
     for i in range(glow_layers):
         # Calculate glow alpha - stronger and more layers when fully charged
         if is_fully_charged:
             # Pulsing glow effect when ready
             pulse = (math.sin(pygame.time.get_ticks() / 200) * 0.3 + 0.7)
             glow_alpha = max(0, min(255, int((90 * pulse) - (i * 20))))
-            glow_size_current = player_size + 4 + (i * 5)  # Larger glow when ready
+            glow_size_current = visual_size + 4 + (i * 5)  # Larger glow when ready
         else:
             glow_alpha = max(0, min(255, int((60 * decoy_ready_percent) - (i * 20))))
-            glow_size_current = player_size + 4 + (i * 4)
+            glow_size_current = visual_size + 4 + (i * 4)
         
         glow_surf = pygame.Surface((glow_size_current, glow_size_current), pygame.SRCALPHA)
         
@@ -655,21 +730,22 @@ def draw_player():
         
         pygame.draw.polygon(glow_surf, glow_color, points)
         
-        # Position and draw with screen shake offset
-        pos_x = screen_x - (glow_size_current - player_size) // 2 + offset_x
-        pos_y = screen_y - (glow_size_current - player_size) // 2 + offset_y
+        # Position and draw with screen shake offset - adjust for larger visual size
+        visual_offset = (visual_size - player_size) // 2
+        pos_x = screen_x - (glow_size_current - visual_size) // 2 + offset_x - visual_offset
+        pos_y = screen_y - (glow_size_current - visual_size) // 2 + offset_y - visual_offset
         screen.blit(glow_surf, (pos_x, pos_y))
     
-    # Create main player surface
-    player_surf = pygame.Surface((player_size, player_size), pygame.SRCALPHA)
+    # Create main player surface with increased visual size
+    player_surf = pygame.Surface((visual_size, visual_size), pygame.SRCALPHA)
     
     # Draw angular, sleek player shape
     points = [
-        (player_size * 0.1, player_size * 0.5),  # Left point
-        (player_size * 0.5, player_size * 0.1),  # Top point
-        (player_size * 0.9, player_size * 0.5),  # Right point
-        (player_size * 0.7, player_size * 0.9),  # Bottom right
-        (player_size * 0.3, player_size * 0.9)   # Bottom left
+        (visual_size * 0.1, visual_size * 0.5),  # Left point
+        (visual_size * 0.5, visual_size * 0.1),  # Top point
+        (visual_size * 0.9, visual_size * 0.5),  # Right point
+        (visual_size * 0.7, visual_size * 0.9),  # Bottom right
+        (visual_size * 0.3, visual_size * 0.9)   # Bottom left
     ]
     
     # Draw main shape with dynamic color - ensure values are valid
@@ -709,8 +785,12 @@ def draw_player():
     line_width = 2 if is_fully_charged else 1
     pygame.draw.polygon(player_surf, highlight_color, points, line_width)
     
-    # Position and draw with screen shake offset
-    screen.blit(player_surf, (screen_x + offset_x, screen_y + offset_y))
+    # Position and draw with screen shake offset - adjust position to center larger visual on the player
+    visual_offset = (visual_size - player_size) // 2
+    screen.blit(player_surf, (screen_x + offset_x - visual_offset, screen_y + offset_y - visual_offset))
+    
+    # Debug: Uncomment to visualize player collision box
+    # pygame.draw.rect(screen, (255, 0, 0), (screen_x + offset_x, screen_y + offset_y, player_size, player_size), 1)
 
 def draw_security_node():
     global node_pulse_time, node_current_color, node_is_bright
@@ -731,33 +811,81 @@ def draw_security_node():
         node_is_bright = not node_is_bright
         node_current_color = NODE_COLOR_BRIGHT if node_is_bright else NODE_COLOR_DIM
     
-    # Draw glow effect (larger semi-transparent circle)
-    glow_radius = node_radius * 1.5
-    glow_surface = pygame.Surface((glow_radius * 2, glow_radius * 2), pygame.SRCALPHA)
-    glow_alpha = 100 if node_is_bright else 50
-    pygame.draw.circle(glow_surface, (*node_current_color, glow_alpha), (glow_radius, glow_radius), glow_radius)
-    screen.blit(glow_surface, (screen_x - glow_radius, screen_y - glow_radius))
+    # Calculate square size based on original circle radius
+    square_size = node_radius * 2
+    square_rect = pygame.Rect(
+        screen_x - square_size // 2,
+        screen_y - square_size // 2,
+        square_size,
+        square_size
+    )
     
-    # Draw the node
-    pygame.draw.circle(screen, node_current_color, (screen_x, screen_y), node_radius)
+    # Draw glow effect (larger semi-transparent square)
+    glow_size = square_size * 1.5
+    glow_surface = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
+    glow_rect = pygame.Rect(0, 0, glow_size, glow_size)
+    glow_alpha = 100 if node_is_bright else 50
+    pygame.draw.rect(glow_surface, (*node_current_color, glow_alpha), glow_rect, border_radius=int(glow_size//10))
+    screen.blit(glow_surface, (screen_x - glow_size // 2, screen_y - glow_size // 2))
+    
+    # Draw the node as a square
+    pygame.draw.rect(screen, node_current_color, square_rect, border_radius=int(square_size//10))
+    
+    # Draw three horizontal lines for microchip look
+    line_color = (0, 0, 0) if node_is_bright else (255, 255, 255)  # Contrasting color
+    line_length = square_size - 6
+    line_start_x = screen_x - line_length // 2
+    
+    # Calculate positions for three evenly spaced lines
+    y_offset = square_size // 4
+    line_y_positions = [
+        screen_y - y_offset,
+        screen_y,
+        screen_y + y_offset
+    ]
+    
+    # Draw the lines
+    for y in line_y_positions:
+        pygame.draw.line(screen, line_color, (line_start_x, y), (line_start_x + line_length, y), 2)
 
 def draw_firewall():
     global firewall_x, firewall_y, firewall_vertical_direction
     
     # Move firewall based on level and decoy presence
     if decoy_active:
-        # Calculate direction toward decoy
+        # Calculate distance to decoy for variable speed
+        dx = decoy_x - firewall_x
+        dy = decoy_y - (firewall_y + firewall_height/2)  # Target middle of firewall to decoy
+        distance = math.sqrt(dx*dx + dy*dy)
+        
+        # Horizontal attraction to decoy - stronger at higher levels
+        attraction_multiplier = 1.0 + (current_level * 0.2)  # Increases with level
+        
         if firewall_x < decoy_x:
-            firewall_x += firewall_speed
+            # Speed increases as distance increases - capped at 2x normal speed
+            speed_factor = min(2.0, max(1.0, distance / 300))
+            firewall_x += firewall_speed * speed_factor * attraction_multiplier
         elif firewall_x > decoy_x:
-            firewall_x -= firewall_speed
+            speed_factor = min(2.0, max(1.0, distance / 300))
+            firewall_x -= firewall_speed * speed_factor * attraction_multiplier
             
-        # Vertical movement toward decoy at higher levels
-        if current_level >= 2:
-            if firewall_y < decoy_y:
-                firewall_y += firewall_vertical_speed
-            elif firewall_y > decoy_y:
-                firewall_y -= firewall_vertical_speed
+        # Vertical movement toward decoy - all levels now, but stronger at higher levels
+        vertical_attraction = 0.5 + (current_level * 0.25)  # Increases with level
+        
+        # Adjust vertical movement based on decoy position
+        if abs(dy) > 10:  # Only move if decoy is not already aligned (within 10 pixels)
+            # Make vertical movement proportional to distance but with a cap
+            vert_speed_factor = min(1.5, max(0.5, abs(dy) / 200))
+            vert_step = firewall_vertical_speed * vert_speed_factor * vertical_attraction
+            
+            if firewall_y + firewall_height/2 < decoy_y:  # If decoy is below firewall center
+                firewall_y += vert_step
+            else:  # If decoy is above firewall center
+                firewall_y -= vert_step
+                
+        # Add subtle oscillation to make movement more natural
+        if random.random() > 0.8:  # 20% chance each frame
+            firewall_y += random.uniform(-1.0, 1.0)
     else:
         # Normal movement - depends on level
         if current_level == 1:
@@ -1071,16 +1199,38 @@ def check_scanner_decoy_collision():
 
 def check_node_collision():
     """Check if player has collided with the security node, return True if collided"""
-    # Calculate the center point of the player
-    player_center_x = player_x + player_size // 2
-    player_center_y = player_y + player_size // 2
+    # Calculate the player's rectangle
+    player_rect = pygame.Rect(player_x, player_y, player_size, player_size)
     
-    # Calculate distance between player center and node center
-    distance = math.sqrt((player_center_x - node_x) ** 2 + (player_center_y - node_y) ** 2)
+    # Calculate the node's square rectangle
+    square_size = node_radius * 2
+    node_rect = pygame.Rect(
+        node_x - square_size // 2,
+        node_y - square_size // 2,
+        square_size,
+        square_size
+    )
     
-    # If distance is less than sum of player half-width and node radius, collision occurred
-    collision = distance < (player_size // 2 + node_radius)
+    # Safety check - make sure node is in a valid position for this level
+    min_node_x = WORLD_WIDTH * 0.75  # Node should be in the right quarter of the world
+    if node_x < min_node_x:
+        print(f"WARNING: Node position ({node_x}) is less than minimum required ({min_node_x})")
+        print(f"This might cause premature level completion")
+        # Don't return false collision here, just warn
     
+    # Check if rectangles overlap
+    collision = player_rect.colliderect(node_rect)
+    
+    # Debug info - only print when collision is detected to avoid spam
+    if collision:
+        print(f"Node collision detected!")
+        print(f"Player position: {player_x}, {player_y}")
+        print(f"Node position: {node_x}, {node_y}")
+        print(f"Player rect: {player_rect}")
+        print(f"Node rect: {node_rect}")
+        print(f"Current level: {current_level}")
+        print(f"World dimensions: {WORLD_WIDTH}x{WORLD_HEIGHT}")
+        
     # If collision, trigger screen shake for feedback
     if collision:
         trigger_screen_shake(0.3, 8)
@@ -1446,7 +1596,8 @@ def draw_score():
         int(SCORE_COLOR[2] * score_pulse)
     )
     
-    score_surf = small_font.render(score_text, True, text_color)
+    # Render score with Pixel Game font
+    score_surf = score_font.render(score_text, True, text_color)
     score_x = 20
     score_y = 20
     screen.blit(score_surf, (score_x, score_y))
@@ -1459,10 +1610,11 @@ def draw_score():
         # Add glitchy effect using the glitch_text function
         glitched_upgrade = glitch_text(upgrade_text, 0.2)
         
+        # Keep using small_font for the prompt text
         prompt_surf = small_font.render(glitched_upgrade, True, SHARD_COLOR)
         prompt_rect = prompt_surf.get_rect()
         prompt_rect.x = score_x
-        prompt_rect.top = score_y + 35
+        prompt_rect.top = score_y + score_surf.get_height() + 5  # Position based on score text height
         
         # Draw with slight movement for glitch effect
         offset_x = random.randint(-1, 1)
@@ -1526,30 +1678,9 @@ def show_upgrade_message():
         screen.blit(text_surf, (text_rect.left + offset_x, text_rect.top + offset_y))
 
 def draw_cooldown_bar():
-    # Draw level text at top right
-    level_text = small_font.render(f"LVL: {current_level}/{max_level}", True, (200, 200, 200))
-    level_rect = level_text.get_rect()
-    level_rect.right = VIEWPORT_WIDTH - 20
-    level_rect.top = 20
-    screen.blit(level_text, level_rect)
-    
-    # If AI is adapting (after 2 decoys), show warning
-    if decoy_count >= 2:
-        warning_text = small_font.render("AI ADAPTING", True, (255, 100, 0))
-        warning_rect = warning_text.get_rect()
-        warning_rect.right = level_rect.right
-        warning_rect.top = level_rect.bottom + 5
-        screen.blit(warning_text, warning_rect)
-    
-    # Draw wall timer if active
-    if wall_timer_active:
-        timer_text = f"WALLS: {int(wall_hide_duration - wall_timer)}s"
-        timer_color = (0, 255, 0)
-        timer_surface = small_font.render(timer_text, True, timer_color)
-        timer_rect = timer_surface.get_rect()
-        timer_rect.right = VIEWPORT_WIDTH - 20
-        timer_rect.top = level_rect.bottom + (30 if decoy_count >= 2 else 5)
-        screen.blit(timer_surface, timer_rect)
+    # This function is now replaced by draw_hud
+    # No need to implement any code here
+    pass
 
 def show_win_message():
     global level_completed
@@ -1561,10 +1692,10 @@ def show_win_message():
         glitched_text = glitch_text('MAIN SERVER BREACHED', 0.2)
     
     win_text = font.render(glitched_text, True, (0, 255, 0))
-    win_rect = win_text.get_rect(center=(VIEWPORT_WIDTH // 2, VIEWPORT_HEIGHT // 2 - 20))
+    win_rect = win_text.get_rect(center=(VIEWPORT_WIDTH // 2, VIEWPORT_HEIGHT // 2 - 40))  # Moved up to make room
     
     # Create a semi-transparent background
-    bg_surface = pygame.Surface((win_rect.width + 120, win_rect.height + 120))
+    bg_surface = pygame.Surface((win_rect.width + 140, win_rect.height + 180))  # Increased height
     bg_surface.fill(BLACK)
     bg_surface.set_alpha(200)
     bg_rect = bg_surface.get_rect(center=(VIEWPORT_WIDTH // 2, VIEWPORT_HEIGHT // 2))
@@ -1576,13 +1707,24 @@ def show_win_message():
     
     if current_level < max_level:
         subtext = font.render(f'Level {current_level} Complete', True, (200, 200, 200))
-        subtext_rect = subtext.get_rect(center=(VIEWPORT_WIDTH // 2, VIEWPORT_HEIGHT // 2 + 20))
+        subtext_rect = subtext.get_rect(center=(VIEWPORT_WIDTH // 2, VIEWPORT_HEIGHT // 2 - 5))
         screen.blit(subtext, subtext_rect)
+        
+        # Calculate next level world size for display
+        next_scaling_factor = 1.0 + current_level * 0.3  # Based on our scaling formula
+        next_width = int(BASE_WORLD_WIDTH * next_scaling_factor)
+        next_height = int(BASE_WORLD_HEIGHT * next_scaling_factor)
+        
+        # Show info about expanding world
+        world_text = f"Next level: World expanding to {next_width//100}x{next_height//100}"
+        world_info = small_font.render(world_text, True, (180, 180, 255))  # Blue tint for emphasis
+        world_rect = world_info.get_rect(center=(VIEWPORT_WIDTH // 2, VIEWPORT_HEIGHT // 2 + 30))
+        screen.blit(world_info, world_rect)
         
         # Create continue button
         button_width, button_height = 250, 50
         button_x = (VIEWPORT_WIDTH - button_width) // 2
-        button_y = VIEWPORT_HEIGHT // 2 + 60
+        button_y = VIEWPORT_HEIGHT // 2 + 70  # Moved down a bit
         
         button_surf = pygame.Surface((button_width, button_height), pygame.SRCALPHA)
         
@@ -1599,7 +1741,7 @@ def show_win_message():
         pygame.draw.rect(button_surf, button_color, (0, 0, button_width, button_height), border_radius=10)
         
         # Draw button text
-        continue_text = "CONTINUE TO NEXT LEVEL"
+        continue_text = "HACK DEEPER"  # Changed to be more thematic
         button_text = button_font.render(continue_text, True, (255, 255, 255))
         text_rect = button_text.get_rect(center=(button_width // 2, button_height // 2))
         button_surf.blit(button_text, text_rect)
@@ -1612,8 +1754,15 @@ def show_win_message():
         subtext_rect = subtext.get_rect(center=(VIEWPORT_WIDTH // 2, VIEWPORT_HEIGHT // 2 + 20))
         screen.blit(subtext, subtext_rect)
         
+        # Show total progression info
+        final_scaling = 1.0 + (max_level - 1) * 0.3
+        world_text = f"Final network size: {int(BASE_WORLD_WIDTH * final_scaling)//100}x{int(BASE_WORLD_HEIGHT * final_scaling)//100}"
+        world_info = small_font.render(world_text, True, (180, 180, 255))
+        world_rect = world_info.get_rect(center=(VIEWPORT_WIDTH // 2, VIEWPORT_HEIGHT // 2 + 60))
+        screen.blit(world_info, world_rect)
+        
         instruction = small_font.render("Press ESC to exit", True, (150, 150, 150))
-        instruction_rect = instruction.get_rect(center=(VIEWPORT_WIDTH // 2, VIEWPORT_HEIGHT // 2 + 60))
+        instruction_rect = instruction.get_rect(center=(VIEWPORT_WIDTH // 2, VIEWPORT_HEIGHT // 2 + 100))
         screen.blit(instruction, instruction_rect)
     
     return button_rect
@@ -1699,7 +1848,7 @@ def draw_start_screen():
     screen.blit(subtitle_surf, subtitle_rect)
     
     # Draw simplified instruction box
-    instr_width, instr_height = 400, 120
+    instr_width, instr_height = 400, 150  # Increased height to accommodate new instruction
     instr_x = (VIEWPORT_WIDTH - instr_width) // 2
     instr_y = subtitle_rect.bottom + 50
     
@@ -1724,15 +1873,21 @@ def draw_start_screen():
     
     # Draw simplified instructions
     instructions = [
-        "Reach the security node (red circle)",
+        "Reach the security node (red microchip)",
         "Use WASD/Arrows to move, Q for decoy",
-        "Avoid the orange firewall"
+        "Avoid the orange firewall",
+        "E to disable walls (costs 5 data shards)",
+        "Each level expands the digital world"
     ]
     
     y_offset = section_rect.bottom + 10
     
-    for line in instructions:
-        text_surf = text_font.render(line, True, (200, 200, 200))
+    for i, line in enumerate(instructions):
+        # Make the last line about expanding world more prominent
+        if i == len(instructions) - 1:
+            text_surf = text_font.render(line, True, (180, 180, 255))  # Bluish color for emphasis
+        else:
+            text_surf = text_font.render(line, True, (200, 200, 200))
         text_rect = text_surf.get_rect(center=(instr_x + instr_width // 2, y_offset))
         screen.blit(text_surf, text_rect)
         y_offset += 25
@@ -1755,7 +1910,7 @@ def draw_start_screen():
         
         screen.blit(start_surf, start_rect)
     
-    # Draw clickable start button
+    # Draw clickable start button (adjusted position due to taller instruction box)
     button_width, button_height = 200, 50
     button_x = (VIEWPORT_WIDTH - button_width) // 2
     button_y = instr_y + instr_height + 80
@@ -2026,22 +2181,40 @@ def glitch_text(text, intensity=0.1):
 
 def reset_level(level):
     global current_level, player_x, player_y, player_speed, decoy_can_use, decoy_timer, decoy_active, player_dead
-    global firewall_x, firewall_y, firewall_speed, environment_timer, scanner_active, scanner_x, scanner_y
-    global data_shards, player_score, node_x, node_y, level_completed
-    global decoy_upgraded, decoy_max_duration, showing_upgrade, walls_visible, wall_timer_active, wall_timer
-    global game_won, firewall_flicker_intensity, firewall_width, firewall_height, firewall_vertical_speed
-    global scanner_radius, scanner_speed, scanner_flicker_intensity, SCANNER_COLOR
+    global firewall_x, firewall_y, firewall_width, firewall_height, firewall_vertical_speed, firewall_active
+    global walls, walls_visible, wall_timer, wall_timer_active, shard_storage_capacity, decoy_cooldown
+    global score, prev_player_x, prev_player_y, WORLD_WIDTH, WORLD_HEIGHT, game_won, level_completed
+    global node_x, node_y, scanner_active, scanner_radius, scanner_speed, scanner_flicker_intensity
+    global SCANNER_COLOR, FIREWALL_COLOR, firewall_flicker_intensity
     
-    # Reset dynamic game variables
+    print(f"Resetting to level {level}")
+    
+    # Reset game state
+    current_level = level
+    player_dead = False
+    
+    # Reset completion states
+    game_won = False  # Reset game won state for new level
+    level_completed = False  # Reset level completion state
+    
+    # Scale world dimensions based on level
+    scaling_factor = 1.0 + (level - 1) * 0.3  # Same formula used in win message
+    WORLD_WIDTH = int(BASE_WORLD_WIDTH * scaling_factor)
+    WORLD_HEIGHT = int(BASE_WORLD_HEIGHT * scaling_factor)
+    
+    print(f"World dimensions for level {level}: {WORLD_WIDTH}x{WORLD_HEIGHT}")
+    
+    # Reset player
     player_x = 200
     player_y = 300
-    player_dead = False
-    firewall_x = 0
+    prev_player_x = player_x  # Initialize previous position
+    prev_player_y = player_y
+    
+    # Reset dynamic game variables
     decoy_can_use = True
     decoy_timer = 0
     decoy_active = False
     scanner_active = False
-    level_completed = False
     showing_upgrade = False
     
     # Reset wall variables - walls should be visible by default at level start
@@ -2049,20 +2222,25 @@ def reset_level(level):
     wall_timer_active = False
     wall_timer = 0
     
-    game_won = False  # Reset game won state for new level
-    
     # Keep data shards between levels
     data_shards = []
     
     # Set up level-specific settings
-    current_level = level
     # Add more shards for higher levels
     for _ in range(level * 3):
         spawn_data_shard()
     
-    # Position security node on the right side of the world
-    node_x = WORLD_WIDTH - 150
+    # Position security node on the right side of the world - ensure it's far enough for each level
+    if level == 1:
+        node_x = WORLD_WIDTH - 150
+    elif level == 2:
+        node_x = WORLD_WIDTH - 200  # Further right in level 2
+    else:
+        node_x = WORLD_WIDTH - 250  # Even further right in level 3
+        
     node_y = WORLD_HEIGHT // 2
+    
+    print(f"Security node position: {node_x}, {node_y}")
     
     # Level-specific firewall settings
     if level == 1:
@@ -2085,6 +2263,7 @@ def reset_level(level):
         FIREWALL_COLOR = (255, 80, 0)  # More intense orange-red for level 2
         
         # Level 2 scanner settings
+        scanner_active = True  # Enable scanner for level 2
         scanner_radius = 4  # Smaller scanner
         scanner_speed = 4  # Slower scanner
         scanner_flicker_intensity = 20
@@ -2099,21 +2278,28 @@ def reset_level(level):
         FIREWALL_COLOR = (255, 30, 0)  # Red for level 3 - more dangerous
         
         # Level 3 scanner settings - more advanced
+        scanner_active = True  # Enable scanner for level 3
         scanner_radius = 5  # Larger scanner
         scanner_speed = 6  # Faster scanner
         scanner_flicker_intensity = 40
         SCANNER_COLOR = (255, 50, 50)  # Red scanner for level 3
     
-    # Randomize initial position
+    # Reset firewall position to left side of the screen
+    firewall_x = -firewall_width  # Start off-screen
     firewall_y = random.randint(0, WORLD_HEIGHT - firewall_height)
+    firewall_active = True
+    
+    # Spawn scanner if active
+    if scanner_active:
+        spawn_scanner()
     
     # Generate maze walls for the level
     generate_maze_walls()
     wall_alpha = 200  # Ensure walls are visible
 
 def draw_hud():
-    # Draw level text at top right
-    level_text = small_font.render(f"LVL: {current_level}/{max_level}", True, (200, 200, 200))
+    # Draw level text at top right using Pixel Game font
+    level_text = score_font.render(f"LVL: {current_level}/{max_level}", True, (200, 200, 200))
     level_rect = level_text.get_rect()
     level_rect.right = VIEWPORT_WIDTH - 20
     level_rect.top = 20
@@ -2121,21 +2307,28 @@ def draw_hud():
     
     # If AI is adapting (after 2 decoys), show warning
     if decoy_count >= 2:
+        # Keep warning in small_font for contrast
         warning_text = small_font.render("AI ADAPTING", True, (255, 100, 0))
         warning_rect = warning_text.get_rect()
-        warning_rect.right = level_rect.right
+        warning_rect.right = VIEWPORT_WIDTH - 20
         warning_rect.top = level_rect.bottom + 5
         screen.blit(warning_text, warning_rect)
     
     # Draw wall timer if active
     if wall_timer_active:
-        # Draw text timer
+        # Draw text timer with Pixel Game font
         timer_text = f"WALLS: {int(wall_hide_duration - wall_timer)}s"
         timer_color = (0, 255, 0)
-        timer_surface = small_font.render(timer_text, True, timer_color)
+        timer_surface = score_font.render(timer_text, True, timer_color)
         timer_rect = timer_surface.get_rect()
         timer_rect.right = VIEWPORT_WIDTH - 20
-        timer_rect.top = level_rect.bottom + (30 if decoy_count >= 2 else 5)
+        
+        # Adjust position based on whether warning is shown
+        if decoy_count >= 2:
+            timer_rect.top = warning_rect.bottom + 5
+        else:
+            timer_rect.top = level_rect.bottom + 5
+            
         screen.blit(timer_surface, timer_rect)
         
         # Draw progress bar
@@ -2155,6 +2348,159 @@ def draw_hud():
             r = int(255 * (1 - progress))
             g = int(255 * progress)
             pygame.draw.rect(screen, (r, g, 0), (bar_x, bar_y, filled_width, bar_height))
+
+def spawn_decoy_ready_particles():
+    """Spawn particles that trail behind the player when decoy is ready"""
+    global prev_player_x, prev_player_y
+    
+    if not decoy_can_use:
+        return
+    
+    # Calculate player movement direction
+    dx = player_x - prev_player_x
+    dy = player_y - prev_player_y
+    move_distance = math.sqrt(dx*dx + dy*dy)
+    
+    # Handle both moving and stationary player
+    if move_distance < 0.5:  # If player is stationary or barely moving
+        # Create particles in a circular pattern around the player
+        angle = random.uniform(0, math.pi * 2)  # Random angle around player
+        distance = random.uniform(3, 8)  # Random distance from player
+        trail_x = player_x + math.cos(angle) * distance
+        trail_y = player_y + math.sin(angle) * distance
+    else:
+        # Normalize direction vector for moving player
+        dx /= move_distance
+        dy /= move_distance
+        
+        # Spawn particles behind the player in the opposite direction of movement
+        trail_x = player_x - dx * 5  # Position particles behind player
+        trail_y = player_y - dy * 5
+    
+    # Spawn 1-3 particles
+    count = random.randint(1, 2)
+    for _ in range(count):
+        # Add randomness to position
+        offset_x = random.uniform(-5.0, 5.0)
+        offset_y = random.uniform(-5.0, 5.0)
+        
+        # Particle size varies slightly
+        size = random.uniform(2.0, 4.0)
+        
+        # Brief lifetime for trailing effect
+        lifetime = random.uniform(0.3, 0.8)
+        
+        # Cyan/blue color matching the decoy ready effect with slight variation
+        color_variation = random.uniform(-20, 20)
+        color = (
+            min(255, max(0, int(30 + color_variation))),  # Slight blue tint
+            min(255, max(0, int(180 + color_variation))),  # Strong cyan
+            min(255, max(0, int(220 + color_variation)))   # Bright blue
+        )
+        
+        # Create particle with initial settings
+        decoy_ready_particles.append({
+            'x': trail_x + offset_x,
+            'y': trail_y + offset_y,
+            'size': size,
+            'alpha': 180,  # Start fairly visible
+            'color': color,
+            'lifetime': lifetime,
+            'age': 0
+        })
+
+def update_decoy_ready_particles():
+    """Update all decoy-ready trailing particles"""
+    global decoy_ready_particles, prev_player_x, prev_player_y
+    
+    # Only spawn particles if decoy is ready
+    if decoy_can_use:
+        # Calculate movement since last frame
+        dx = player_x - prev_player_x
+        dy = player_y - prev_player_y
+        move_distance = math.sqrt(dx*dx + dy*dy)
+        
+        # Adjust spawn probability based on movement
+        if move_distance < 0.5:  # Stationary or barely moving
+            spawn_probability = 0.4  # Higher probability when stationary for more particles
+        else:
+            spawn_probability = 0.3  # Normal probability when moving
+            
+        # Spawn particles based on adjusted probability
+        if random.random() < spawn_probability:
+            spawn_decoy_ready_particles()
+    
+    # Store current position for next frame
+    prev_player_x = player_x
+    prev_player_y = player_y
+    
+    # Update existing particles
+    for i in range(len(decoy_ready_particles) - 1, -1, -1):
+        particle = decoy_ready_particles[i]
+        
+        # Update age
+        particle['age'] += clock.get_time() / 1000
+        
+        # Remove old particles
+        if particle['age'] >= particle['lifetime']:
+            decoy_ready_particles.pop(i)
+            continue
+            
+        # Calculate fade out as particle ages
+        fade_ratio = particle['age'] / particle['lifetime']
+        particle['alpha'] = int((1 - fade_ratio) * 180)  # Fade from 180 to 0
+        
+        # Also shrink slightly as they age
+        particle['size'] *= (1 - 0.05 * fade_ratio)
+
+def draw_decoy_ready_particles():
+    """Draw all decoy-ready trailing particles"""
+    if not decoy_can_use or len(decoy_ready_particles) == 0:
+        return
+        
+    # Create a surface for all particles
+    particle_surf = pygame.Surface((VIEWPORT_WIDTH, VIEWPORT_HEIGHT), pygame.SRCALPHA)
+    
+    for particle in decoy_ready_particles:
+        # Skip if fully transparent
+        if particle['alpha'] <= 0:
+            continue
+        
+        # Convert world to screen coordinates
+        screen_x, screen_y = world_to_screen(particle['x'], particle['y'])
+        
+        # Skip particles outside the viewport
+        if (screen_x < -10 or screen_x > VIEWPORT_WIDTH + 10 or 
+            screen_y < -10 or screen_y > VIEWPORT_HEIGHT + 10):
+            continue
+        
+        # Apply screen shake offset if active
+        offset_x, offset_y = 0, 0
+        if screen_shake:
+            offset_x = random.randint(-shake_intensity, shake_intensity)
+            offset_y = random.randint(-shake_intensity, shake_intensity)
+        
+        # Draw particle with current alpha
+        # First draw glow
+        glow_size = particle['size'] * 2
+        glow_alpha = particle['alpha'] // 3
+        pygame.draw.circle(
+            particle_surf,
+            (*particle['color'], glow_alpha),
+            (int(screen_x + offset_x), int(screen_y + offset_y)),
+            glow_size
+        )
+        
+        # Then draw main particle
+        pygame.draw.circle(
+            particle_surf,
+            (*particle['color'], particle['alpha']),
+            (int(screen_x + offset_x), int(screen_y + offset_y)),
+            particle['size']
+        )
+    
+    # Draw all particles at once
+    screen.blit(particle_surf, (0, 0))
 
 while running:
     # Handle events
@@ -2224,6 +2570,9 @@ while running:
     if not game_won:
         keys = pygame.key.get_pressed()
         
+        # Store original position
+        original_x, original_y = player_x, player_y
+        
         # Calculate potential new positions
         new_x, new_y = player_x, player_y
         
@@ -2245,6 +2594,15 @@ while running:
             player_x = new_x
         if not check_wall_collision(player_x, new_y):
             player_y = new_y
+            
+        # Try diagonal movement if both horizontal and vertical movement failed
+        # This allows sliding along walls instead of getting stuck
+        if player_x == original_x and player_y == original_y and (new_x != original_x or new_y != original_y):
+            # Try to move diagonally at least in one direction - half speed sliding
+            if not check_wall_collision(new_x, player_y + (new_y - player_y) * 0.5):
+                player_y += (new_y - player_y) * 0.5
+            if not check_wall_collision(player_x + (new_x - player_x) * 0.5, new_y):
+                player_x += (new_x - player_x) * 0.5
     
     # Update camera position to follow player
     update_camera()
@@ -2264,6 +2622,9 @@ while running:
     # Update particles
     update_particles()
     
+    # Update decoy-ready particles
+    update_decoy_ready_particles()
+    
     # Update screen shake effect
     update_screen_shake()
     
@@ -2278,6 +2639,9 @@ while running:
     
     # Draw particles (behind everything except the grid)
     draw_particles()
+    
+    # Draw decoy-ready particle trails
+    draw_decoy_ready_particles()
     
     # Draw walls if in maze environment
     draw_walls()
@@ -2305,10 +2669,7 @@ while running:
     # Draw score
     draw_score()
     
-    # Draw cooldown bar and environment timer
-    draw_cooldown_bar()
-    
-    # Draw the HUD with wall timer
+    # Draw HUD with level info, world size and wall timer
     draw_hud()
     
     # Draw upgrade message if active
