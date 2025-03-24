@@ -8,6 +8,7 @@ A cyberpunk-themed hacker infiltration game built with Pygame where you navigate
 - **Sleek Character Design**: Angular player character with responsive blue glow effects
 - **Maze Navigation**: Navigate through a maze with strategically placed walls
 - **Wall Disabling System**: Temporarily disable walls by spending collected data shards
+- **Player Health System**: Health bar with damage from firewalls and walls, with visual feedback
 - **Adaptive AI**: Security system that evolves and responds to player actions
 - **Visual Feedback System**: Color-coded player states indicate ability readiness with particle effects
 - **Interactive Tutorials**: Guided instructions for game mechanics with pause functionality
@@ -19,6 +20,7 @@ A cyberpunk-themed hacker infiltration game built with Pygame where you navigate
 
 ## Recent Updates
 
+- **Player Health System**: Added a health system with a stylish red health bar and damage from obstacles
 - **Enhanced Decoy Indicator**: Decoy readiness now displays particle effects even when the player is stationary
 - **Security Node Redesign**: Changed from pulsing red circle to a more thematic red microchip design
 - **Improved Level Progression**: Fixed level scaling with proper world size expansion between levels
@@ -61,6 +63,15 @@ The game features two tutorial popups that help new players:
 - Each level increases world size and security system complexity
 
 ## Game Mechanics Detail
+
+### Player Health System
+The player health system adds a survival element to the game:
+- Red health bar displayed at the top center of the screen
+- Player takes 5 damage points when colliding with firewalls
+- Player takes 1 damage point when colliding with maze walls
+- Visual feedback with red flashing effect when taking damage
+- Brief invulnerability period after taking damage
+- Death and position reset when health reaches zero
 
 ### Decoy System
 The decoy system allows players to create a distraction that attracts the firewall. The decoy:

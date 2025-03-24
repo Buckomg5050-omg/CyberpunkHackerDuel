@@ -197,6 +197,13 @@ player_start_x = WORLD_WIDTH // 4 - player_size // 2
 player_start_y = WORLD_HEIGHT - 200
 player_dead = False
 
+# Player health settings
+player_max_health = 100
+player_health = player_max_health
+player_health_regen = 0  # Health regeneration per second (can be implemented later)
+damage_cooldown = 0  # Cooldown between damage events
+damage_cooldown_duration = 1.0  # Seconds of invulnerability after taking damage
+
 # Define decoy particles list for trailing effect when decoy is ready
 decoy_ready_particles = []
 
@@ -591,6 +598,15 @@ def check_wall_collision(new_x, new_y):
         # Check collision with any wall
         for wall in walls:
             if player_rect.colliderect(wall):
+                # Deal 1 damage when colliding with walls if damage cooldown expired
+                global player_health, damage_cooldown
+                if damage_cooldown <= 0:
+                    player_health -= 1  # Wall collision deals 1 damage
+                    damage_cooldown = damage_cooldown_duration / 2  # Shorter cooldown for wall collisions
+                    
+                    # Trigger minor screen shake for feedback
+                    trigger_screen_shake(0.1, 2)
+                
                 return True
     
     return False
@@ -680,6 +696,19 @@ def draw_player():
         int(PLAYER_COLOR[1] * 0.5 + PLAYER_COLOR[1] * 0.5 * decoy_ready_percent),
         int(PLAYER_COLOR[2] * decoy_ready_percent)
     )
+    
+    # Modify player color if taking damage (in damage cooldown)
+    if damage_cooldown > 0:
+        # Pulsing red effect when in damage cooldown
+        flash_intensity = abs(math.sin(pygame.time.get_ticks() / 100)) * 0.6 + 0.4
+        damage_overlay = (255 * flash_intensity, 0, 0)
+        
+        # Mix the damage overlay with the regular player color
+        dynamic_player_color = (
+            min(255, int(dynamic_player_color[0] * 0.3 + damage_overlay[0] * 0.7)),
+            max(0, int(dynamic_player_color[1] * 0.3)),
+            max(0, int(dynamic_player_color[2] * 0.3))
+        )
     
     # Apply enhanced glow when decoy is fully charged
     is_fully_charged = decoy_can_use
@@ -1243,7 +1272,23 @@ def check_firewall_collision():
                       (player_y <= firewall_y and player_bottom >= firewall_bottom))
     
     # Both horizontal and vertical components must overlap for a collision
-    return horizontal_overlap and vertical_overlap
+    collision = horizontal_overlap and vertical_overlap
+    
+    # If collision occurred and damage cooldown has expired, deal damage
+    global player_health, damage_cooldown, show_alert
+    if collision and damage_cooldown <= 0:
+        player_health -= 5  # Firewall deals 5 damage
+        damage_cooldown = damage_cooldown_duration  # Start cooldown
+        show_alert = True  # Show firewall alert
+        
+        # Play impact sound if available
+        if sound_enabled:
+            impact_sound.play()
+        
+        # Trigger screen shake for better feedback
+        trigger_screen_shake()
+    
+    return collision
 
 def draw_decoy():
     if not decoy_active:
@@ -1837,7 +1882,7 @@ def draw_start_screen():
     screen.blit(subtitle_surf, subtitle_rect)
     
     # Draw simplified instruction box
-    instr_width, instr_height = 400, 150  # Increased height to accommodate new instruction
+    instr_width, instr_height = 400, 165  # Increased height by 10% (from 150 to 165)
     instr_x = (VIEWPORT_WIDTH - instr_width) // 2
     instr_y = subtitle_rect.bottom + 50
     
@@ -1880,24 +1925,6 @@ def draw_start_screen():
         text_rect = text_surf.get_rect(center=(instr_x + instr_width // 2, y_offset))
         screen.blit(text_surf, text_rect)
         y_offset += 25
-    
-    # Draw "Press SPACE to start" with blinking effect
-    if math.sin(pygame.time.get_ticks() / 300) > 0:  # Blink effect
-        start_text = "Press SPACE to begin"
-        
-        # Create glowing text effect
-        glow_surf = start_font.render(start_text, True, (SHARD_COLOR[0]//2, SHARD_COLOR[1]//2, SHARD_COLOR[2]//2))
-        start_surf = start_font.render(start_text, True, SHARD_COLOR)
-        
-        glow_rect = glow_surf.get_rect(center=(VIEWPORT_WIDTH // 2, instr_y + instr_height + 50))
-        start_rect = start_surf.get_rect(center=(VIEWPORT_WIDTH // 2, instr_y + instr_height + 50))
-        
-        # Draw glow first, then text
-        for offset in range(1, 3):
-            for x_offset, y_offset in [(offset, 0), (-offset, 0), (0, offset), (0, -offset)]:
-                screen.blit(glow_surf, (glow_rect.x + x_offset, glow_rect.y + y_offset))
-        
-        screen.blit(start_surf, start_rect)
     
     # Draw clickable start button (adjusted position due to taller instruction box)
     button_width, button_height = 200, 50
@@ -2174,11 +2201,15 @@ def reset_level(level):
     global walls, walls_visible, wall_timer, wall_timer_active, shard_storage_capacity, decoy_cooldown
     global score, prev_player_x, prev_player_y, WORLD_WIDTH, WORLD_HEIGHT, game_won, level_completed
     global node_x, node_y, scanner_active, scanner_radius, scanner_speed, scanner_flicker_intensity
-    global SCANNER_COLOR, FIREWALL_COLOR, firewall_flicker_intensity
+    global SCANNER_COLOR, FIREWALL_COLOR, firewall_flicker_intensity, player_health, damage_cooldown
     
     # Reset game state
     current_level = level
     player_dead = False
+    
+    # Reset player health
+    player_health = player_max_health
+    damage_cooldown = 0
     
     # Reset completion states
     game_won = False  # Reset game won state for new level
@@ -2281,6 +2312,38 @@ def reset_level(level):
     wall_alpha = 200  # Ensure walls are visible
 
 def draw_hud():
+    # Draw player health bar at top center
+    health_bar_width = 250
+    health_bar_height = 20
+    health_bar_x = (VIEWPORT_WIDTH - health_bar_width) // 2
+    health_bar_y = 15
+    
+    # Draw background
+    pygame.draw.rect(screen, (50, 50, 50), (health_bar_x, health_bar_y, health_bar_width, health_bar_height))
+    
+    # Calculate health percentage
+    health_percent = max(0, player_health / player_max_health)
+    filled_width = int(health_bar_width * health_percent)
+    
+    # Use a nice shade of red for health bar
+    health_color = (200, 30, 45)  # Rich red color
+    
+    # Draw health bar fill
+    if filled_width > 0:
+        pygame.draw.rect(screen, health_color, (health_bar_x, health_bar_y, filled_width, health_bar_height))
+    
+    # Draw border with cyberpunk style
+    border_thickness = 2
+    pygame.draw.rect(screen, (200, 200, 200), (health_bar_x - border_thickness, health_bar_y - border_thickness, 
+                                             health_bar_width + border_thickness * 2, health_bar_height + border_thickness * 2), 
+                    border_thickness)
+    
+    # Draw health text
+    health_text = small_font.render(f"HP: {int(player_health)}/{player_max_health}", True, (255, 255, 255))
+    health_text_rect = health_text.get_rect()
+    health_text_rect.center = (health_bar_x + health_bar_width // 2, health_bar_y + health_bar_height // 2)
+    screen.blit(health_text, health_text_rect)
+
     # Draw level text at top right using Pixel Game font
     level_text = score_font.render(f"LVL: {current_level}/{max_level}", True, (200, 200, 200))
     level_rect = level_text.get_rect()
@@ -2589,6 +2652,21 @@ while running:
     
     # Update camera position to follow player
     update_camera()
+    
+    # Update damage cooldown timer
+    if damage_cooldown > 0:
+        damage_cooldown -= clock.get_time() / 1000  # Subtract elapsed time in seconds
+    
+    # Check if player is dead and handle it
+    if player_health <= 0 and not player_dead:
+        player_dead = True
+        reset_player_position()  # Reset position
+        player_health = player_max_health  # Refill health
+        
+        # Visual/Audio feedback
+        if sound_enabled:
+            impact_sound.play()
+        trigger_screen_shake(0.7, 15)  # Strong shake effect
     
     # Update decoy status
     update_decoy()
